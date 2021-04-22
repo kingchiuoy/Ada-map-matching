@@ -20,6 +20,10 @@ import java.util.Collection;
 
 public class ObservationWithCandidateStates {
 
+    public ObservationWithCandidateStates prev;
+    public double avgSpeed;
+    public double timeDis;
+
     /**
      * Observation made at this time step.
      */

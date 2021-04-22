@@ -1,10 +1,7 @@
 package com.graphhopper.matching.http;
 
 import com.graphhopper.http.GraphHopperBundle;
-import com.graphhopper.matching.cli.GetBoundsCommand;
-import com.graphhopper.matching.cli.ImportCommand;
-import com.graphhopper.matching.cli.MatchCommand;
-import com.graphhopper.matching.cli.MeasurementCommand;
+import com.graphhopper.matching.cli.*;
 import io.dropwizard.Application;
 import io.dropwizard.bundles.assets.ConfiguredAssetsBundle;
 import io.dropwizard.setup.Bootstrap;
@@ -23,6 +20,7 @@ public class MapMatchingApplication extends Application<MapMatchingServerConfigu
         bootstrap.addCommand(new MatchCommand());
         bootstrap.addCommand(new GetBoundsCommand());
         bootstrap.addCommand(new MeasurementCommand());
+        bootstrap.addCommand(new AdaMatchCommand());
         bootstrap.addBundle(new ConfiguredAssetsBundle("/assets/mapmatching-webapp/", "/app/", "index.html"));
     }
 

@@ -44,6 +44,22 @@ public class State {
     private final EdgeIteratorState incomingVirtualEdge;
     private final EdgeIteratorState outgoingVirtualEdge;
 
+
+    private double prob;
+    public double speedScore;
+    public double dirScore;
+    public double posScore;
+
+    public State maxPrev;
+
+    public void setProb(double prob) {
+        this.prob = prob;
+    }
+
+    public double getProb() {
+        return prob;
+    }
+
     /**
      * Creates an undirected candidate for a real node.
      */

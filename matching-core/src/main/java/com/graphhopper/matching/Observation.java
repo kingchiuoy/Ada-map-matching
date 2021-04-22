@@ -24,6 +24,50 @@ import java.util.Objects;
 public class Observation {
     private GHPoint point;
 
+    private long timeStep;
+    private double lat;
+    private double lon;
+    public double accuracy;
+    private double speed;
+    private double direction;
+    public double avgSpeed;
+
+    public double getSpeed() {
+        return speed;
+    }
+
+    public void setSpeed(double speed) {
+        this.speed = speed;
+    }
+
+    public double getDirection() {
+        return direction;
+    }
+
+    public long getTimestep() {
+        return timeStep;
+    }
+
+    public Observation(long timeStep, double lat, double lon) {
+        this.timeStep = timeStep;
+        this.point = new GHPoint(lat, lon);
+    }
+
+    public Observation(long timeStep, double lat, double lon, double acc) {
+        this.timeStep = timeStep;
+        this.point = new GHPoint(lat, lon);
+        this.accuracy = acc;
+    }
+
+    public Observation(long timeStep, double lat, double lon,  double speed,
+                       double direction, double acc) {
+        this.timeStep = timeStep;
+        this.point = new GHPoint(lat, lon);
+        this.accuracy = acc;
+        this.speed = speed;
+        this.direction = direction;
+    }
+
     public Observation(GHPoint p) {
         this.point = p;
     }

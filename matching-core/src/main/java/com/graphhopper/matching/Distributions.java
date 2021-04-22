@@ -27,6 +27,11 @@ import static java.lang.Math.sqrt;
  */
 public class Distributions {
 
+    static double standardNormalDistribution(double x) {
+        return exp(- pow(x, 2));
+    }
+
+
     static double normalDistribution(double sigma, double x) {
         return 1.0 / (sqrt(2.0 * PI) * sigma) * exp(-0.5 * pow(x / sigma, 2));
     }
