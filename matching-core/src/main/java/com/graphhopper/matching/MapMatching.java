@@ -396,7 +396,7 @@ public class MapMatching {
         List<MatchResult> results = new ArrayList<>();
         List<SequenceState<State, Observation, Path>> seq;
         StopWatch computeSW = new StopWatch().start();
-        seq = computeFastConfidenceSequenceWithoutBackTrack(timeSteps);
+        seq = adaMatch(timeSteps);
         computeSW.stop();
 
         List<EdgeIteratorState> path = seq.stream().filter(s1 -> s1.transitionDescriptor != null).flatMap(s1 -> s1.transitionDescriptor.calcEdges().stream()).collect(Collectors.toList());
@@ -414,7 +414,7 @@ public class MapMatching {
     }
 
 
-    private List<SequenceState<State, Observation, Path>> computeFastConfidenceSequenceWithoutBackTrack(List<ObservationWithCandidateStates> timeSteps) {
+    private List<SequenceState<State, Observation, Path>> adaMatch(List<ObservationWithCandidateStates> timeSteps) {
 //        System.out.println("Using Confidence Abb MEthod");
         final HmmProbabilities probabilities = new HmmProbabilities(measurementErrorSigma, transitionProbabilityBeta);
         ObservationWithCandidateStates prevTimeStep = null;
