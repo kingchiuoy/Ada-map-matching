@@ -698,6 +698,366 @@ public class MapMatching {
         return result;
     }
 
+
+    private List<SequenceState<State, Observation, Path>> adaMatchWithBacktrack(List<ObservationWithCandidateStates> timeSteps) {
+//        System.out.println("Using Confidence Abb MEthod");
+        final HmmProbabilities probabilities = new HmmProbabilities(measurementErrorSigma, transitionProbabilityBeta);
+        ObservationWithCandidateStates prevTimeStep = null;
+        StopWatch loopWatch = new StopWatch();
+        StopWatch buildWatch = new StopWatch();
+        StopWatch backWardTime = new StopWatch();
+        StopWatch calTime = new StopWatch();
+        StopWatch preTime = new StopWatch();
+
+        StopWatch speedTime = new StopWatch();
+        StopWatch pathTime = new StopWatch();
+        StopWatch dirTime = new StopWatch();
+        StopWatch posTime = new StopWatch();
+        StopWatch afterTime = new StopWatch();
+        List<Integer> candidateList = new ArrayList<>();
+        int stepCounter = 0;
+//        System.out.println("TimeStepSize: " + timeSteps.size());
+        int countReduce = 0;
+        int inValidSnappedCount = 0;
+        loopWatch.start();
+
+        int windowSize = 5;
+        DescriptiveStatistics speedStatics = new DescriptiveStatistics(windowSize);
+
+//        maxVisitedNodes = 6000;
+
+
+
+        for (ObservationWithCandidateStates timeStep : timeSteps) {
+            final Map<State, Double> emissionLogProbabilities = new HashMap<>();
+//            Map<Transition<State>, Double> transitionLogProbabilities = new HashMap<>();
+            if(timeStep.observation.accuracy > 50) {
+//                System.out.println(stepCounter +  ": Worng Observation");
+                stepCounter++;
+                continue;
+            }
+            //            The window size of the average speed
+
+
+            int metricNum = 3;
+            int candidateCount = 0;
+            if (prevTimeStep == null) {
+                timeStep.prev = null;
+                for (State candidate : timeStep.candidates) {
+                    candidate.setProb(1.0 / (double) timeStep.candidates.size());
+                }
+                speedStatics.addValue(timeStep.observation.getSpeed());
+
+            } else {
+                candidateList.add(prevTimeStep.candidates.size());
+                timeStep.prev = prevTimeStep;
+//              This is the distance of the Priori Probability
+                final double linearDistance = distanceCalc.calcDist(prevTimeStep.observation.getPoint().lat,
+                        prevTimeStep.observation.getPoint().lon, timeStep.observation.getPoint().lat, timeStep.observation.getPoint().lon);
+                double observationDirection = prevTimeStep.observation.getDirection();
+                double timeDis = Math.ceil((double)(timeStep.observation.getTimestep() - prevTimeStep.observation.getTimestep()));
+                preTime.start();
+                speedStatics.addValue(timeStep.observation.getSpeed());
+                double avgSpeed = speedStatics.getMean();
+                if(Math.abs(avgSpeed) < 5.0) {
+                    avgSpeed = 5.0;
+                }
+                timeStep.avgSpeed = avgSpeed;
+                timeStep.timeDis = timeDis;
+                List<State> toDelete = new ArrayList<>();
+                double connectionToDeleteBound = 0.005;
+                List<Double> validProb = new ArrayList<>();
+
+                //                Speed Probability
+
+//                The calculation of the Speed Probability.
+                int curCount = 0;
+
+                for(State to : timeStep.candidates) {
+                    speedTime.start();
+                    double prob = 0.0;
+                    double speedProb;
+                    int prevCount = 0;
+                    State maxPrev = null;
+                    double maxProb = Double.NEGATIVE_INFINITY;
+
+
+
+                    for (State from : prevTimeStep.candidates) {
+                        double dist = Double.MAX_VALUE;
+                        pathTime.start();
+                        final Path path = createRouter().calcPath(from.getSnap().getClosestNode(), to.getSnap().getClosestNode(), from.isOnDirectedEdge() ? from.getOutgoingVirtualEdge().getEdge() : EdgeIterator.ANY_EDGE, to.isOnDirectedEdge() ? to.getIncomingVirtualEdge().getEdge() : EdgeIterator.ANY_EDGE);
+                        pathTime.stop();
+                        if (path.isFound()) {
+                            speedProb = Utils.getAdjustSpeedProb(path.getDistance() / (double)timeDis, avgSpeed);
+                            dist = path.getDistance();
+                        } else {
+                            speedProb = 0.0;
+                        }
+
+                        double checkProb = 1.0 / dist * speedProb;
+                        if(checkProb > maxProb) {
+//                            System.out.println("test");
+                        }
+                        if(checkProb * from.getProb() > maxProb) {
+                            maxPrev = from;
+                            maxProb = checkProb * from.getProb();
+                        }
+                        prob += speedProb * from.getProb();
+                        prevCount++;
+                    }
+
+                    if(maxPrev == null) {
+//                        System.out.println("Check Here");
+                    }
+
+                    to.maxPrev = maxPrev;
+                    to.speedScore = prob;
+                    to.setProb(prob);
+                    if(prob < connectionToDeleteBound) {
+                        toDelete.add(to);
+                        speedTime.stop();
+                    } else {
+                        validProb.add(prob);
+                        speedTime.stop();
+
+                        dirTime.start();
+//                        Direction
+                        PointList pointList = null;
+
+                        double pathDirection = 0.0;
+                        double preLat,postLat, postLon, preLon;
+
+                        if(to.isOnDirectedEdge()) {
+                            pointList = to.getIncomingVirtualEdge().fetchWayGeometry(FetchMode.ALL);
+                            if(to.getSnap().getWayIndex() >= pointList.size()) {
+//                            System.out.println("For bug");
+                            }
+                        } else {
+                            EdgeIteratorState tmp = to.getSnap().getClosestEdge();
+
+                            pointList = tmp.fetchWayGeometry(FetchMode.ALL);
+                        }
+
+                        if (pointList.size() >= 2) {
+                            int ind = to.isOnDirectedEdge() ? 0 :  to.getSnap().getWayIndex();
+                            if(ind == 0) {
+                                preLat = pointList.getLat(ind);
+                                preLon = pointList.getLon(ind);
+                                postLat = pointList.getLat(ind + 1);
+                                postLon = pointList.getLon(ind + 1);
+                            } else {
+                                preLat = pointList.getLat(ind - 1);
+                                preLon = pointList.getLon(ind - 1);
+                                postLat = pointList.getLat(ind);
+                                postLon = pointList.getLon(ind);
+                            }
+                            pathDirection = Utils.calDirection(preLat, preLon, postLat, postLon);
+                            if(to.isOnDirectedEdge()) {
+                                boolean test = to.getIncomingVirtualEdge().getReverse(EdgeIteratorState.REVERSE_STATE);
+                                if(!test) {
+                                    pathDirection = Utils.calDirection(postLat, postLon, preLat, preLon);
+                                }
+                            } else {}
+                        } else {
+                            inValidSnappedCount++;
+                            pathDirection = Double.MAX_VALUE;
+                        }
+                        double dirProb = Distributions.standardNormalDistribution(Math.abs(pathDirection - observationDirection) / 120.0) * Math.sqrt(2.0);
+                        to.dirScore = dirProb;
+                        dirTime.stop();
+
+//                        Position Prob
+                        // distance from observation to road in meters
+                        posTime.start();
+                        final double distance = to.getSnap().getQueryDistance();
+                        double disProb;
+                        final double standardDistance = Math.abs(distance) / measurementErrorSigma;
+                        disProb = Distributions.standardNormalDistribution(standardDistance) * Math.sqrt(2.0);
+                        to.posScore = disProb;
+                        posTime.stop();
+                    }
+                    candidateCount++;
+                    curCount++;
+                }
+                afterTime.start();
+//                System.out.println(finalProbs.stream().mapToDouble(a->a).summaryStatistics());
+                for(State s : toDelete) {
+                    timeStep.candidates.remove(s);
+                }
+
+                if(timeStep.candidates.size() == 0) {
+                    stepCounter++;
+                    continue;
+                }
+
+                double[][] probMatrix = new double[metricNum][timeStep.candidates.size()];
+                candidateCount = 0;
+                for(State to : timeStep.candidates) {
+                    probMatrix[1][candidateCount] = to.speedScore;
+                    probMatrix[2][candidateCount] = to.dirScore;
+                    probMatrix[0][candidateCount] = to.posScore;
+                    candidateCount++;
+                }
+                afterTime.stop();
+                preTime.stop();
+                candidateCount = 0;
+
+                calTime.start();
+                RealVector confidence = Compute.getResult(probMatrix, timeStep.candidates.size(), metricNum);
+                double[] confindenceArr = confidence.toArray();
+                RealVector weightVector =  confidence.getSubVector(0, 3);
+                double score = 0.0;
+                RealMatrix S = MatrixUtils.createRealMatrix(probMatrix);
+                for(int i = 0; i < S.getColumnDimension(); i++) {
+                    score += weightVector.dotProduct(S.getColumnVector(i)) * confindenceArr[metricNum + i];
+                }
+
+                candidateCount = 0;
+
+                for (State to : timeStep.candidates) {
+                    to.setProb(confindenceArr[metricNum + candidateCount]);
+                    candidateCount++;
+                }
+
+                calTime.stop();
+
+                boolean isDeleteFinished = false;
+                double sumProbs = 1.0;
+                while (!isDeleteFinished) {
+                    isDeleteFinished = true;
+                    ArrayList<State> delList = new ArrayList<>();
+                    for (State to : timeStep.candidates) {
+                        if (to.getProb() / sumProbs < 0.05) {
+                            delList.add(to);
+                            isDeleteFinished = false;
+                        }
+                        to.setProb(to.getProb() / sumProbs);
+                    }
+                    if (!isDeleteFinished) {
+                        for (State t : delList) {
+                            sumProbs -= t.getProb();
+                            timeStep.candidates.remove(t);
+                        }
+                    }
+                }
+
+                if (score < 0.45)  {
+                    stepCounter++;
+                    timeStep.candidates.clear();
+                    countReduce++;
+                    continue;
+                }
+
+                //                Backwards
+                boolean isBackWardFinished = false;
+                ObservationWithCandidateStates prev = prevTimeStep;
+                ObservationWithCandidateStates cur = timeStep;
+                Map<State, Double> stateToProb = new HashMap<>();
+                while (!isBackWardFinished) {
+                    isBackWardFinished = true;
+                    final double otherlinearDistance = distanceCalc.calcDist(prev.observation.getPoint().lat,
+                            prev.observation.getPoint().lon, cur.observation.getPoint().lat, cur.observation.getPoint().lon);
+                    for (State from : prev.candidates) {
+                        double prob = 0.0;
+                        for (State to : cur.candidates) {
+                            final Path path = createRouter().calcPath(from.getSnap().getClosestNode(),
+                                    to.getSnap().getClosestNode(),
+                                    from.isOnDirectedEdge() ? from.getOutgoingVirtualEdge().getEdge() : EdgeIterator.ANY_EDGE, to.isOnDirectedEdge() ? to.getIncomingVirtualEdge().getEdge() : EdgeIterator.ANY_EDGE);
+                            if (path.isFound()) {
+                                double tmp = Utils.getAdjustSpeedProb(path.getDistance() / (double)cur.timeDis, cur.avgSpeed);
+                                prob += tmp * to.getProb();
+                            }
+                        }
+                        stateToProb.put(from, prob);
+                    }
+                    double sumBackWardProbs = stateToProb.values().stream().reduce(0.0, (a, b) -> (a + b));
+
+                    isDeleteFinished = false;
+                    while (!isDeleteFinished) {
+                        isDeleteFinished = true;
+                        ArrayList<State> delList = new ArrayList<>();
+                        for (State from : prev.candidates) {
+                            double tmp = stateToProb.get(from) / sumBackWardProbs;
+                            if (tmp < 0.05) {
+                                delList.add(from);
+                                isDeleteFinished = false;
+                                isBackWardFinished = false;
+                            }
+                            from.setProb(tmp);
+                        }
+                        if (!isDeleteFinished) {
+                            for (State t : delList) {
+                                sumBackWardProbs -= stateToProb.get(t);
+                                prev.candidates.remove(t);
+                            }
+                        }
+                    }
+                    stateToProb.clear();
+
+//                    Change the maxPrev
+                    for(State to : cur.candidates) {
+                        double speedProb;
+                        State maxPrev = null;
+                        double maxProb = Double.NEGATIVE_INFINITY;
+                        for (State from : prev.candidates) {
+                            double dist = Double.MAX_VALUE;
+                            pathTime.start();
+                            final Path path = createRouter().calcPath(from.getSnap().getClosestNode(), to.getSnap().getClosestNode(), from.isOnDirectedEdge() ? from.getOutgoingVirtualEdge().getEdge() : EdgeIterator.ANY_EDGE, to.isOnDirectedEdge() ? to.getIncomingVirtualEdge().getEdge() : EdgeIterator.ANY_EDGE);
+                            pathTime.stop();
+                            if (path.isFound()) {
+                                speedProb =  Utils.getAdjustSpeedProb(path.getDistance() / (double)cur.timeDis, cur.avgSpeed);;
+                                dist = path.getDistance();
+                            } else {
+                                speedProb = 0.0;
+                            }
+                            double checkProb = 1.0 / dist * speedProb;
+                            if (speedProb * from.getProb() > maxProb) {
+                                maxPrev = from;
+                                maxProb = speedProb * from.getProb();
+                            }
+                        }
+                        to.maxPrev = maxPrev;
+                    }
+                    cur = cur.prev;
+                    prev = cur.prev;
+                    if (prev == null) break;
+                }
+            }
+            stepCounter++;
+            prevTimeStep = timeStep;
+        }
+
+        stepCounter = 0;
+
+        buildWatch.start();
+        List<SequenceState<State, Observation, Path>> result = new ArrayList<>();
+        State prev = null;
+        int ind = timeSteps.size() - 1;
+        while(prev == null || prev.maxPrev == null) {
+            if(ind >= 0 && ind < timeSteps.size() &&  timeSteps.get(ind).candidates.size() != 0) {
+                prev = getMaxState(timeSteps.get(ind).candidates, 1);
+            } else if(ind < 0) {
+                break;
+            }
+            ind--;
+        }
+
+        while(prev != null && prev.maxPrev != null) {
+            StringBuilder tmp = new StringBuilder();
+            tmp.append(prev.getSnap().getSnappedPoint().lat);
+            tmp.append(",");
+            tmp.append(prev.getSnap().getSnappedPoint().lon);
+            final Path path = createRouter().calcPath(prev.maxPrev.getSnap().getClosestNode(), prev.getSnap().getClosestNode(), prev.maxPrev.isOnDirectedEdge() ? prev.maxPrev.getOutgoingVirtualEdge().getEdge() : EdgeIterator.ANY_EDGE,
+                    prev.isOnDirectedEdge() ? prev.getIncomingVirtualEdge().getEdge() : EdgeIterator.ANY_EDGE);
+            result.add(new SequenceState<State, Observation, Path>(prev.maxPrev, prev.maxPrev.getEntry(),
+                    path));
+            prev = prev.maxPrev;
+        }
+        Collections.reverse(result);
+        return result;
+    }
+
     private State getMaxState(Collection<State> states, int count) {
 //        System.out.println(count + " " + states.size());
         return states.stream().max(new Comparator<State>() {
